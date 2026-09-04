@@ -1,0 +1,16 @@
+services:
+  oui-chef:
+    build: .
+    ports:
+      - "${OUI_CHEF_PORT:-8094}:8094"
+    environment:
+      # Optional private bridge. Leave unset for list/meal management without AI.
+      HERMES_BRIDGE_URL: ${HERMES_BRIDGE_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - oui-chef-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  oui-chef-data:

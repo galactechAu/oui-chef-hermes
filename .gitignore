@@ -1,0 +1,28 @@
+# Python and local development
+__pycache__/
+*.py[cod]
+*.log
+
+# Runtime state and secrets
+/data/
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Agent-local planning artifacts
+.hermes/
+
+# Private, site-specific deployment helpers (kept locally; not for public release)
+meal-planner-forward.py
+meal-planner-forward.service
+meal_planner_heal.py
+meal_planner_hermes_bridge.py
+s6-run
+update_first_four.py
+update_healthy_bowl.py

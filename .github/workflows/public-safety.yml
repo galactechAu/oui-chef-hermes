@@ -1,0 +1,24 @@
+name: Public safety
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  public-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Reject private deployment details and credential-like values
+        run: python3 scripts/public_safety_scan.py
+      - name: Run application tests
+        run: python3 -m unittest discover -s tests -q
+      - name: Compile application modules
+        run: python3 -m py_compile app.py core.py store.py generation.py recipe_importer.py recipe_page.py realtime.py
