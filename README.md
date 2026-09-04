@@ -4,7 +4,7 @@ A small, shared meal planner for high-protein, lower-carb cooking: generate a pl
 
 ## Features
 
-- Healthy meal planning with a strict mushroom exclusion guard.
+- Dietary-allergy settings: mushroom protection is always enabled; add household allergy terms to screen both generated suggestions and imports before review.
 - Shared shopping lists with Server-Sent Events (SSE) updates.
 - Responsive mobile layout with fixed bottom navigation.
 - Saved meals, cooking mode, ratings, and serving scaling.
@@ -37,7 +37,7 @@ See [docs/hermes-integration.md](docs/hermes-integration.md). Never expose the b
 
 ## Safety and content
 
-Mushrooms and obvious mushroom-derived products are intentionally rejected in generation/import pathways, but always review recipes and ingredients for allergy safety. Suggestions are not medical or nutritional advice. Imported content remains subject to its source’s terms and rights; preserve attribution and use only legitimately public material.
+Mushrooms are always screened as a household allergy, and you can add other dietary allergies in the Plan tab. Configured terms are included as hard generation constraints and are checked across generated recipe text and imported recipe titles, ingredients, summaries, and methods before a recipe can reach review or Meals. This is an ingredient-text safety screen, not medical or nutritional advice; always check labels and source recipes. Imported content remains subject to its source’s terms and rights; preserve attribution and use only legitimately public material.
 
 ## Development
 
