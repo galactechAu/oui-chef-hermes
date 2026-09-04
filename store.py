@@ -18,7 +18,7 @@ class ShoppingStore:
         self._publish = publish or (lambda *_args, **_kwargs: None)
 
     def _load(self) -> dict:
-        data = json.loads(self.path.read_text())
+        data = json.loads(self.path.read_text()) if self.path.exists() else {}
         data.setdefault("lists", [])
         data.setdefault("drafts", [])
         data.setdefault("meal_ratings", {})
@@ -36,6 +36,7 @@ class ShoppingStore:
         return data
 
     def _save(self, data: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_suffix(".tmp")
         temp.write_text(json.dumps(data, indent=2) + "\n")
         temp.replace(self.path)

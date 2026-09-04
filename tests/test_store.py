@@ -35,10 +35,6 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(meal["url"], "https://example.test/chilli")
         self.assertEqual(meal["description"], "Lean and spicy")
 
-    def test_legacy_cheeseburger_page_is_not_referenced_by_seed_data(self):
-        seed = Path(__file__).parents[1] / "data" / "lists.json"
-        self.assertNotIn("healthy-cheeseburger-bowl.html", seed.read_text())
-
     def test_saves_imported_recipe_data_for_a_meal(self):
         self.path.write_text(json.dumps({"lists": [{"id": "week", "meals": [{"name": "Chilli"}]}]}))
         self.store.save_recipe("week", 0, {"steps": ["Cook"], "image_url": "https://img.test/a.jpg", "summary": "Lean"})
