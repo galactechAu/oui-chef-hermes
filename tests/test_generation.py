@@ -16,6 +16,15 @@ class GenerationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_generation({"meals": [{"name": "Bad", "ingredients": [{"name": "mushrooms", "quantity": 1, "unit": "pack"}]}]})
 
+    def test_validation_rejects_configured_allergen(self):
+        payload = {"meals": [{"name": "Peanut chicken", "source_url": "https://example.com/chicken", "source_title": "Chicken recipe", "ingredients": [{"name": "Peanut oil", "quantity": 1, "unit": "tbsp"}]}]}
+        with self.assertRaisesRegex(ValueError, "peanuts"):
+            validate_generation(payload, ["peanuts"])
+
+    def test_prompt_includes_dietary_allergies(self):
+        prompt = generation_prompt(1, "", "Easy", [], allergies=["mushrooms", "dairy"])
+        self.assertIn("dairy", prompt)
+
     def test_prompt_includes_three_star_or_better_taste_signals(self):
         prompt = generation_prompt(2, "", "Easy", [], {"names": set(), "urls": set()}, [{"name": "Lemon chicken", "rating": 3}])
         self.assertIn("Positive household taste signals", prompt)
@@ -46,6 +55,14 @@ class GenerationTests(unittest.TestCase):
         with patch("app.request_hermes", return_value={"output": output}), patch("app.validate_public_redirects", side_effect=lambda url: url), patch("app.fetch_public_source_text", return_value="<title>Other recipe</title>"), patch("app.STORE.record_generation_candidates"):
             with self.assertRaisesRegex(ValueError, "source evidence"):
                 ask_hermes(1, "", "Easy")
+
+    def test_import_rejects_configured_dietary_allergen(self):
+        from unittest.mock import patch
+        from app import ask_import_recipe
+        recipe = {"name": "Peanut chicken", "ingredients": ["chicken", "peanut oil"], "steps": ["Cook safely"]}
+        with patch("app.request_hermes", return_value={"output": json.dumps(recipe)}), patch("app.STORE.get_dietary_allergies", return_value=["mushrooms", "peanuts"]):
+            with self.assertRaisesRegex(ValueError, "peanuts"):
+                ask_import_recipe({"text": "Chicken recipe"})
 
     def test_selected_draft_creates_a_new_aggregated_list(self):
         with tempfile.TemporaryDirectory() as directory:

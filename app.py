@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from queue import Empty
 
 from core import scaled_purchase_quantity
+from allergies import allergy_error, detect_allergens
 from generation import extract_json, generation_prompt, validate_generation, verify_source_evidence
 from recipe_importer import classify_source, decode_image_data, fetch_public_source_text, recipe_import_prompt, validate_public_url, validate_public_redirects
 from recipe_page import render_recipe_page
@@ -74,8 +75,9 @@ def ask_hermes(count: int, instruction: str, complexity: str, progress=None) -> 
     progress = progress or (lambda *_args: None)
     progress(15, "Finding public recipe sources")
     exclusions = STORE.generation_exclusions()
-    prompt = generation_prompt(count, instruction, complexity, STORE.history(), exclusions, STORE.positive_rated_meals())
-    meals = validate_generation(extract_json(request_hermes(prompt, 600)["output"]))
+    allergies = STORE.get_dietary_allergies()
+    prompt = generation_prompt(count, instruction, complexity, STORE.history(), exclusions, STORE.positive_rated_meals(), allergies)
+    meals = validate_generation(extract_json(request_hermes(prompt, 600)["output"]), allergies)
     progress(70, "Verifying cited public sources")
     for meal in meals:
         meal["source_url"] = validate_public_redirects(meal["source_url"])
@@ -177,8 +179,9 @@ def ask_import_recipe(body: dict, progress=None) -> tuple[dict, dict]:
     ingredients, steps = recipe.get("ingredients"), recipe.get("steps")
     if not name or not isinstance(ingredients, list) or not ingredients or not isinstance(steps, list) or not steps:
         raise ValueError("the source did not provide a complete recipe with ingredients and steps")
-    combined = " ".join(map(str, ingredients + steps)).lower()
-    if "mushroom" in combined: raise ValueError("this imported recipe contains mushrooms and cannot be saved")
+    combined = " ".join([name, str(recipe.get("summary", "")), str(recipe.get("notes", ""))] + list(map(str, ingredients + steps)))
+    matches = detect_allergens(combined, STORE.get_dietary_allergies())
+    if matches: raise allergy_error(matches)
     recipe["name"] = name; recipe["ingredients"] = [str(x) for x in ingredients[:15]]; recipe["steps"] = [str(x) for x in steps[:18]]
     return recipe, source
 
@@ -269,6 +272,7 @@ class Handler(BaseHTTPRequestHandler):
         pages = {"/": "index.html", "/index.html": "index.html"}
         if path in pages:
             raw = (ROOT / "static" / pages[path]).read_bytes(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(raw))); self.end_headers(); return self.wfile.write(raw)
+        if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.get_dietary_allergies()})
         if path == "/api/events": return self.send_events()
         if path == "/health": return self.send_json(200, health_payload())
         if path == "/api/calendar":
@@ -336,6 +340,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, body = urlparse(self.path).path, self.body()
         try:
+            if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.set_dietary_allergies(body.get("allergies", []))})
             if path == "/api/aisles/order": return self.send_json(200, {"order": STORE.set_aisle_order(body.get("order", []))})
             if path.startswith("/api/import-recipes/") and path.endswith("/add-to-list"):
                 return self.send_json(201, presentation(STORE.add_imported_recipe_to_list(path.split("/")[3], str(body.get("list_id", "")), str(body.get("name", "")))))

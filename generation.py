@@ -4,6 +4,8 @@ import json
 import re
 from urllib.parse import urlparse
 
+from allergies import allergy_error, detect_allergens, normalise_allergens
+
 FORBIDDEN = ("mushroom",)
 
 
@@ -42,7 +44,8 @@ def extract_json(text: str):
     raise ValueError("generation did not return valid JSON")
 
 
-def validate_generation(payload: dict) -> list[dict]:
+def validate_generation(payload: dict, allergies=None) -> list[dict]:
+    allergies = normalise_allergens(allergies or ["mushrooms"])
     meals = payload.get("meals") if isinstance(payload, dict) else None
     if not isinstance(meals, list) or not meals:
         raise ValueError("generation must contain a non-empty meals array")
@@ -58,10 +61,11 @@ def validate_generation(payload: dict) -> list[dict]:
             host_is_public = bool(parsed.hostname) and parsed.hostname.lower() != "localhost" and not parsed.hostname.lower().endswith((".local", ".internal", ".lan", ".ts.net"))
         if parsed.scheme not in {"http", "https"} or not host_is_public or not str(meal.get("source_title", "")).strip():
             raise ValueError("every generated meal needs a valid public recipe source URL and title")
+        meal_text = " ".join([str(meal.get(key, "")) for key in ("name", "description", "nutrition_note")] + [str(item.get("name", "")) for item in meal["ingredients"]] + [str(step) for step in meal.get("method", [])])
+        matches = detect_allergens(meal_text, allergies)
+        if matches: raise allergy_error(matches)
         for item in meal["ingredients"]:
             name = str(item.get("name", ""))
-            if any(word in name.lower() for word in FORBIDDEN):
-                raise ValueError("mushrooms are not permitted")
             if not name or not isinstance(item.get("quantity"), (int, float)) or not item.get("unit"):
                 raise ValueError("every ingredient needs name, numeric quantity, and unit")
         meal.setdefault("method", [])
@@ -83,10 +87,11 @@ def verify_source_evidence(meal: dict, page_text: str) -> bool:
     return True
 
 
-def generation_prompt(count: int, instruction: str, complexity: str, history: list[dict], exclusions: dict[str, set[str]] | None = None, positive_ratings: list[dict] | None = None) -> str:
+def generation_prompt(count: int, instruction: str, complexity: str, history: list[dict], exclusions: dict[str, set[str]] | None = None, positive_ratings: list[dict] | None = None, allergies=None) -> str:
+    allergies = normalise_allergens(allergies or ["mushrooms"])
     exclusions = exclusions or {"names": set(), "urls": set()}
     positive_ratings = positive_ratings or []
     taste_signals = "; ".join(f"{row['name']} ({row['rating']}★)" for row in positive_ratings) or "None"
     previous = "; ".join(f"{row['name']} (rating {row.get('rating', 'unrated')})" for row in history[-30:]) or "None"
     excluded = "; ".join(sorted(exclusions["names"])) or "None"
-    return f'''Generate exactly {count} distinct dinner recipes for two adults plus two leftover lunches (4 serves).\nUser instruction: {instruction or "No further instruction."}\nComplexity: {complexity}. Use only normal Australian home-kitchen equipment and Coles/Woolworths ingredients.\nHard constraints: healthy fat-loss focused, high protein, low added sugar, controlled carbs, no mushrooms in any form, no rich creamy sauces, no buns/fries/normal pasta unless the user explicitly requests them. Prioritise chicken breast, lean beef, salmon, legumes and vegetables. Never repeat or closely imitate low-rated meals. Prefer patterns from 5-rated meals. Positive household taste signals (3–5 stars; use as flavour/style guidance only and do not repeat these meals): {taste_signals}. Existing meal history: {previous}. Previously generated/saved names that must not be suggested again: {excluded}.\nReturn ONLY compact valid JSON, under 7000 characters: {{"meals":[{{"name":"", "source_url":"https://public-recipe-page", "source_title":"Published recipe title", "description":"", "complexity":"Easy", "ingredients":[{{"name":"", "quantity":1, "unit":"g", "aisle":"Fresh produce", "notes":""}}], "method":["short source-supported step"], "nutrition_note":""}}]}}. First use web/browser tools to find real public recipe pages. Every meal must be grounded in one distinct inspected public source URL and title; never invent a recipe, ingredients, method, title, or URL. If fewer than {count} compliant unique recipes are available, return an error JSON rather than making up substitutes. Do not use login-only, paywalled, private-network, or access-restricted sources.'''
+    return f'''Generate exactly {count} distinct dinner recipes for two adults plus two leftover lunches (4 serves).\nUser instruction: {instruction or "No further instruction."}\nComplexity: {complexity}. Use only normal Australian home-kitchen equipment and Coles/Woolworths ingredients.\nHard constraints: healthy fat-loss focused, high protein, low added sugar, controlled carbs, no dietary allergens ({'; '.join(allergies)}) in any form, no rich creamy sauces, no buns/fries/normal pasta unless the user explicitly requests them. Prioritise chicken breast, lean beef, salmon, legumes and vegetables. Never repeat or closely imitate low-rated meals. Prefer patterns from 5-rated meals. Positive household taste signals (3–5 stars; use as flavour/style guidance only and do not repeat these meals): {taste_signals}. Existing meal history: {previous}. Previously generated/saved names that must not be suggested again: {excluded}.\nReturn ONLY compact valid JSON, under 7000 characters: {{"meals":[{{"name":"", "source_url":"https://public-recipe-page", "source_title":"Published recipe title", "description":"", "complexity":"Easy", "ingredients":[{{"name":"", "quantity":1, "unit":"g", "aisle":"Fresh produce", "notes":""}}], "method":["short source-supported step"], "nutrition_note":""}}]}}. First use web/browser tools to find real public recipe pages. Every meal must be grounded in one distinct inspected public source URL and title; never invent a recipe, ingredients, method, title, or URL. If fewer than {count} compliant unique recipes are available, return an error JSON rather than making up substitutes. Do not use login-only, paywalled, private-network, or access-restricted sources.'''

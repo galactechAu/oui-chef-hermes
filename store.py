@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.parse import urlparse
 from uuid import uuid4
 
+from allergies import BASELINE_ALLERGENS, normalise_allergens
 from core import normalise_item
 
 
@@ -28,6 +29,7 @@ class ShoppingStore:
         data.setdefault("generation_candidates", [])
         data.setdefault("generation_jobs", [])
         data.setdefault("household_preferences", {})
+        data["household_preferences"]["dietary_allergies"] = normalise_allergens(data["household_preferences"].get("dietary_allergies", BASELINE_ALLERGENS))
         for candidate in data["generation_candidates"]:
             candidate.setdefault("source_domain", (urlparse(candidate.get("canonical_source_url", "")).hostname or "").lower())
             candidate.setdefault("last_shown_at", candidate.get("created_at", ""))
@@ -41,6 +43,15 @@ class ShoppingStore:
         temp.write_text(json.dumps(data, indent=2) + "\n")
         temp.replace(self.path)
         self._publish("state.changed")
+
+    def get_dietary_allergies(self) -> list[str]:
+        return list(self._load()["household_preferences"]["dietary_allergies"])
+
+    def set_dietary_allergies(self, allergies) -> list[str]:
+        clean = normalise_allergens(allergies)
+        with self._lock:
+            data = self._load(); data["household_preferences"]["dietary_allergies"] = clean; self._save(data)
+        return clean
 
     def get_lists(self) -> list[dict]:
         return self._load()["lists"]

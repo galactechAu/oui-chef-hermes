@@ -35,6 +35,11 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(meal["url"], "https://example.test/chilli")
         self.assertEqual(meal["description"], "Lean and spicy")
 
+    def test_dietary_allergies_are_persisted_with_mushrooms_as_a_baseline(self):
+        saved = self.store.set_dietary_allergies(["dairy", "fish sauce"])
+        self.assertEqual(saved, ["mushrooms", "dairy", "fish sauce"])
+        self.assertEqual(ShoppingStore(self.path).get_dietary_allergies(), saved)
+
     def test_saves_imported_recipe_data_for_a_meal(self):
         self.path.write_text(json.dumps({"lists": [{"id": "week", "meals": [{"name": "Chilli"}]}]}))
         self.store.save_recipe("week", 0, {"steps": ["Cook"], "image_url": "https://img.test/a.jpg", "summary": "Lean"})
@@ -140,7 +145,7 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(row["selected"])
         self.assertIsNone(row["saved_meal_id"])
         self.assertIn("recipe", row)
-        self.assertEqual(self.store._load()["household_preferences"], {})
+        self.assertEqual(self.store._load()["household_preferences"], {"dietary_allergies": ["mushrooms"]})
         with self.assertRaisesRegex(ValueError, "already generated"):
             self.store.record_generation_candidates([{**meal, "source_url": "https://example.com/lemon-chicken"}])
 
