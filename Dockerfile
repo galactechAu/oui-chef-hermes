@@ -11,7 +11,7 @@ COPY --from=whisper-builder /opt/whisper.cpp/build/bin/whisper-cli /usr/local/bi
 RUN mkdir -p /models \
     && curl -fsSL --retry 3 https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin -o /models/ggml-tiny.en.bin
 WORKDIR /app
-COPY app.py core.py store.py generation.py recipe_page.py recipe_importer.py realtime.py ./
+COPY app.py allergies.py core.py store.py generation.py recipe_page.py recipe_importer.py realtime.py ./
 COPY static ./static
 EXPOSE 8094
 ENV PORT=8094
