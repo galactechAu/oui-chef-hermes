@@ -122,13 +122,19 @@ class ShoppingStore:
             if any(row["id"] != book_id and row["title"].casefold() == clean.casefold() for row in data["recipe_books"]): raise ValueError("a recipe book with that title already exists")
             book["title"] = clean; self._save(data); return self._present_recipe_book(data, book)
 
-    def create_list_from_recipe_book(self, book_id: str, meal_ids: list[str], name: str = "") -> dict:
+    def create_list_from_recipe_book(self, book_id: str, meal_ids: list[str], name: str = "", list_id: str = "") -> dict:
         book = self.get_recipe_book(book_id)
         if not book: raise KeyError(book_id)
         selected = meal_ids or book["meal_ids"]
         if not selected or any(value not in set(book["meal_ids"]) for value in selected): raise ValueError("select one or more meals from this Recipe Book")
         catalogue = {row["id"]: row for row in self.get_meal_catalogue()}
-        return self.create_list_from_imported_recipes([catalogue[value]["recipe_id"] for value in selected], name)
+        recipes = [catalogue[value] for value in selected]
+        if list_id:
+            listing = None
+            for meal in recipes:
+                listing = self._add_recipe_to_list(meal["recipe"], meal.get("source", {}), list_id, name)
+            return listing
+        return self.create_list_from_imported_recipes([meal["recipe_id"] for meal in recipes], name)
 
     def delete_recipe_book(self, book_id: str) -> None:
         with self._lock:

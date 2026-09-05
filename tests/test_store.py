@@ -40,6 +40,15 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(saved, ["mushrooms", "dairy", "fish sauce"])
         self.assertEqual(ShoppingStore(self.path).get_dietary_allergies(), saved)
 
+    def test_recipe_book_can_add_selected_meals_to_an_existing_list(self):
+        recipe = self.store.save_imported_recipe({"name": "Book meal", "ingredients": ["1 each chicken"], "steps": ["Cook"]}, {"url": "https://example.test/book"})
+        book = self.store.create_recipe_book("Book")
+        self.store.add_meals_to_recipe_book(book["id"], [recipe["id"]])
+        existing = self.store.create_empty_list("Existing")
+        result = self.store.create_list_from_recipe_book(book["id"], [], list_id=existing["id"])
+        self.assertEqual(result["id"], existing["id"])
+        self.assertEqual(result["meals"][0]["name"], "Book meal")
+
     def test_meal_catalogue_migrates_saved_recipes_to_stable_ids(self):
         first = self.store.save_imported_recipe({"name": "Stable chicken", "ingredients": ["chicken"], "steps": ["Cook"]}, {"url": "https://example.test/chicken"})
         catalogue = self.store.get_meal_catalogue()

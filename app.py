@@ -353,7 +353,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.set_dietary_allergies(body.get("allergies", []))})
             if path == "/api/recipe-books": return self.send_json(201, STORE.create_recipe_book(str(body.get("title", ""))))
             if path.startswith("/api/recipe-books/") and path.endswith("/create-list"):
-                return self.send_json(201, presentation(STORE.create_list_from_recipe_book(path.split("/")[3], body.get("meal_ids", []), str(body.get("name", "")))))
+                return self.send_json(201, presentation(STORE.create_list_from_recipe_book(path.split("/")[3], body.get("meal_ids", []), str(body.get("name", "")), str(body.get("list_id", "")))))
             if path.startswith("/api/recipe-books/") and path.endswith("/meals"):
                 return self.send_json(200, STORE.add_meals_to_recipe_book(path.split("/")[3], body.get("meal_ids", [])))
             if path.startswith("/api/recipe-books/") and path.endswith("/rename"):
