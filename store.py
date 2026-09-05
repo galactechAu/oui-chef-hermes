@@ -35,6 +35,8 @@ class ShoppingStore:
             candidate.setdefault("last_shown_at", candidate.get("created_at", ""))
             candidate.setdefault("selected", False); candidate.setdefault("saved_meal_id", None); candidate.setdefault("recipe", {})
         data.setdefault("calendar", [])
+        data.setdefault("recipe_books", [])
+        data.setdefault("recipe_book_memberships", [])
         return data
 
     def _save(self, data: dict) -> None:
@@ -75,6 +77,71 @@ class ShoppingStore:
 
     def get_imported_recipe(self, recipe_id: str) -> dict | None:
         return next((item for item in self.get_imported_recipes() if item["id"] == recipe_id), None)
+
+    def _present_recipe_book(self, data: dict, book: dict) -> dict:
+        ids = [row["meal_id"] for row in data["recipe_book_memberships"] if row["book_id"] == book["id"]]
+        meals = [row for row in data["imported_recipes"] if row["id"] in ids]
+        return {**book, "meal_count": len(meals), "meal_ids": ids, "meal_preview": [row["recipe"]["name"] for row in meals[:3]]}
+
+    def get_recipe_books(self, query: str = "") -> list[dict]:
+        data = self._load(); needle = str(query).casefold().strip(); books = [self._present_recipe_book(data, row) for row in data["recipe_books"]]
+        return [row for row in books if not needle or needle in row["title"].casefold() or any(needle in name.casefold() for name in row["meal_preview"])]
+
+    def get_recipe_book(self, book_id: str) -> dict | None:
+        data = self._load(); book = next((row for row in data["recipe_books"] if row["id"] == book_id), None)
+        return self._present_recipe_book(data, book) if book else None
+
+    def create_recipe_book(self, title: str) -> dict:
+        clean = re.sub(r"\s+", " ", str(title).strip())
+        if not clean or len(clean) > 80: raise ValueError("recipe book title must be 1–80 characters")
+        with self._lock:
+            data = self._load()
+            if any(row["title"].casefold() == clean.casefold() for row in data["recipe_books"]): raise ValueError("a recipe book with that title already exists")
+            book = {"id": f"book-{uuid4().hex}", "title": clean, "created_at": datetime.now(timezone.utc).isoformat()}
+            data["recipe_books"].insert(0, book); self._save(data); return self._present_recipe_book(data, book)
+
+    def rename_recipe_book(self, book_id: str, title: str) -> dict:
+        clean = re.sub(r"\s+", " ", str(title).strip())
+        if not clean or len(clean) > 80: raise ValueError("recipe book title must be 1–80 characters")
+        with self._lock:
+            data = self._load(); book = next((row for row in data["recipe_books"] if row["id"] == book_id), None)
+            if not book: raise KeyError(book_id)
+            if any(row["id"] != book_id and row["title"].casefold() == clean.casefold() for row in data["recipe_books"]): raise ValueError("a recipe book with that title already exists")
+            book["title"] = clean; self._save(data); return self._present_recipe_book(data, book)
+
+    def create_list_from_recipe_book(self, book_id: str, meal_ids: list[str], name: str = "") -> dict:
+        book = self.get_recipe_book(book_id)
+        if not book: raise KeyError(book_id)
+        selected = meal_ids or book["meal_ids"]
+        if not selected or any(value not in set(book["meal_ids"]) for value in selected): raise ValueError("select one or more meals from this Recipe Book")
+        return self.create_list_from_imported_recipes(selected, name)
+
+    def delete_recipe_book(self, book_id: str) -> None:
+        with self._lock:
+            data = self._load(); before = len(data["recipe_books"]); data["recipe_books"] = [row for row in data["recipe_books"] if row["id"] != book_id]
+            if len(data["recipe_books"]) == before: raise KeyError(book_id)
+            data["recipe_book_memberships"] = [row for row in data["recipe_book_memberships"] if row["book_id"] != book_id]; self._save(data)
+
+    def add_meals_to_recipe_book(self, book_id: str, meal_ids: list[str]) -> dict:
+        with self._lock:
+            data = self._load(); book = next((row for row in data["recipe_books"] if row["id"] == book_id), None)
+            selected = list(dict.fromkeys(str(value) for value in meal_ids))
+            if not book: raise KeyError(book_id)
+            if not selected or any(not any(meal["id"] == value for meal in data["imported_recipes"]) for value in selected): raise ValueError("select one or more saved Meals")
+            known = {(row["book_id"], row["meal_id"]) for row in data["recipe_book_memberships"]}
+            for meal_id in selected:
+                if (book_id, meal_id) not in known: data["recipe_book_memberships"].append({"book_id": book_id, "meal_id": meal_id})
+            self._save(data); return self._present_recipe_book(data, book)
+
+    def remove_meal_from_recipe_book(self, book_id: str, meal_id: str) -> dict:
+        with self._lock:
+            data = self._load(); book = next((row for row in data["recipe_books"] if row["id"] == book_id), None)
+            if not book: raise KeyError(book_id)
+            data["recipe_book_memberships"] = [row for row in data["recipe_book_memberships"] if not (row["book_id"] == book_id and row["meal_id"] == meal_id)]
+            self._save(data); return self._present_recipe_book(data, book)
+
+    def get_uncategorised_meals(self) -> list[dict]:
+        data = self._load(); member_ids = {row["meal_id"] for row in data["recipe_book_memberships"]}; return [row for row in data["imported_recipes"] if row["id"] not in member_ids]
 
     def save_imported_recipe(self, recipe: dict, source: dict) -> dict:
         if not isinstance(recipe, dict) or not str(recipe.get("name", "")).strip() or not isinstance(recipe.get("ingredients"), list) or not isinstance(recipe.get("steps"), list):

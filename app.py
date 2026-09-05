@@ -273,6 +273,12 @@ class Handler(BaseHTTPRequestHandler):
         if path in pages:
             raw = (ROOT / "static" / pages[path]).read_bytes(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(raw))); self.end_headers(); return self.wfile.write(raw)
         if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.get_dietary_allergies()})
+        if path == "/api/recipe-books":
+            from urllib.parse import parse_qs
+            query = parse_qs(urlparse(self.path).query).get("q", [""])[0]; return self.send_json(200, {"books": STORE.get_recipe_books(query)})
+        if path == "/api/recipe-books/uncategorised": return self.send_json(200, {"meals": STORE.get_uncategorised_meals()})
+        if path.startswith("/api/recipe-books/"):
+            book = STORE.get_recipe_book(path.rsplit("/", 1)[-1]); return self.send_json(200, book) if book else self.send_json(404, {"error": "recipe book not found"})
         if path == "/api/events": return self.send_events()
         if path == "/health": return self.send_json(200, health_payload())
         if path == "/api/calendar":
@@ -320,6 +326,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         try:
+            if path.startswith("/api/recipe-books/") and "/meals/" in path:
+                parts = path.split("/"); return self.send_json(200, STORE.remove_meal_from_recipe_book(parts[3], parts[5]))
+            if path.startswith("/api/recipe-books/"):
+                STORE.delete_recipe_book(path.rsplit("/", 1)[-1]); return self.send_json(200, {"deleted": True})
             if path.startswith("/api/generation-jobs/") and "/meals/" in path:
                 parts = path.split("/"); return self.send_json(200, STORE.dismiss_generation_job_meal(parts[3], int(parts[5])))
             if path.startswith("/api/generation-jobs/"):
@@ -341,6 +351,13 @@ class Handler(BaseHTTPRequestHandler):
         path, body = urlparse(self.path).path, self.body()
         try:
             if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.set_dietary_allergies(body.get("allergies", []))})
+            if path == "/api/recipe-books": return self.send_json(201, STORE.create_recipe_book(str(body.get("title", ""))))
+            if path.startswith("/api/recipe-books/") and path.endswith("/create-list"):
+                return self.send_json(201, presentation(STORE.create_list_from_recipe_book(path.split("/")[3], body.get("meal_ids", []), str(body.get("name", "")))))
+            if path.startswith("/api/recipe-books/") and path.endswith("/meals"):
+                return self.send_json(200, STORE.add_meals_to_recipe_book(path.split("/")[3], body.get("meal_ids", [])))
+            if path.startswith("/api/recipe-books/") and path.endswith("/rename"):
+                return self.send_json(200, STORE.rename_recipe_book(path.split("/")[3], str(body.get("title", ""))))
             if path == "/api/aisles/order": return self.send_json(200, {"order": STORE.set_aisle_order(body.get("order", []))})
             if path.startswith("/api/import-recipes/") and path.endswith("/add-to-list"):
                 return self.send_json(201, presentation(STORE.add_imported_recipe_to_list(path.split("/")[3], str(body.get("list_id", "")), str(body.get("name", "")))))

@@ -40,6 +40,19 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(saved, ["mushrooms", "dairy", "fish sauce"])
         self.assertEqual(ShoppingStore(self.path).get_dietary_allergies(), saved)
 
+    def test_recipe_books_allow_many_to_many_membership_and_uncategorised_meals(self):
+        first = self.store.save_imported_recipe({"name": "Lemon chicken", "ingredients": ["chicken"], "steps": ["Cook"]}, {"url": "https://example.test/lemon"})
+        second = self.store.save_imported_recipe({"name": "Salmon tray bake", "ingredients": ["salmon"], "steps": ["Bake"]}, {"url": "https://example.test/salmon"})
+        quick = self.store.create_recipe_book("Quick dinners")
+        favourites = self.store.create_recipe_book("Favourites")
+        self.store.add_meals_to_recipe_book(quick["id"], [first["id"]])
+        self.store.add_meals_to_recipe_book(favourites["id"], [first["id"]])
+        self.assertEqual([meal["id"] for meal in self.store.get_uncategorised_meals()], [second["id"]])
+        self.assertEqual(self.store.get_recipe_book(quick["id"])["meal_count"], 1)
+        self.store.delete_recipe_book(quick["id"])
+        self.assertIsNotNone(self.store.get_imported_recipe(first["id"]))
+        self.assertEqual(self.store.get_recipe_book(favourites["id"])["meal_count"], 1)
+
     def test_saves_imported_recipe_data_for_a_meal(self):
         self.path.write_text(json.dumps({"lists": [{"id": "week", "meals": [{"name": "Chilli"}]}]}))
         self.store.save_recipe("week", 0, {"steps": ["Cook"], "image_url": "https://img.test/a.jpg", "summary": "Lean"})
