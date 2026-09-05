@@ -81,7 +81,7 @@ class ShoppingStore:
     def _present_recipe_book(self, data: dict, book: dict) -> dict:
         ids = [row["meal_id"] for row in data["recipe_book_memberships"] if row["book_id"] == book["id"]]
         meals = [row for row in data["imported_recipes"] if row["id"] in ids]
-        return {**book, "meal_count": len(meals), "meal_ids": ids, "meal_preview": [row["recipe"]["name"] for row in meals[:3]]}
+        return {**book, "meal_count": len(meals), "meal_ids": ids, "meal_preview": [row["recipe"]["name"] for row in meals[:3]], "meals": meals}
 
     def get_recipe_books(self, query: str = "") -> list[dict]:
         data = self._load(); needle = str(query).casefold().strip(); books = [self._present_recipe_book(data, row) for row in data["recipe_books"]]
