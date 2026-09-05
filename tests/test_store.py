@@ -100,7 +100,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(listing["items"], [])
 
     def test_removes_one_list_meal_without_deleting_its_shopping_items(self):
-        self.path.write_text(json.dumps({"lists": [{"id": "week", "meals": [{"name": "Chicken"}, {"name": "Salmon"}], "items": [{"id": "chicken", "name": "Chicken"}]}]}))
+        self.path.write_text(json.dumps({"lists": [{"id": "week", "meals": [{"name": "Chicken"}, {"name": "Salmon"}], "items": [{"id": "chicken", "name": "Chicken", "quantity": 1}]}]}))
         listing = self.store.delete_list_meal("week", 0)
         self.assertEqual([meal["name"] for meal in listing["meals"]], ["Salmon"])
         self.assertEqual([item["id"] for item in listing["items"]], ["chicken"])
