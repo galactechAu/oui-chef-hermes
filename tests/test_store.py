@@ -40,6 +40,13 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(saved, ["mushrooms", "dairy", "fish sauce"])
         self.assertEqual(ShoppingStore(self.path).get_dietary_allergies(), saved)
 
+    def test_meal_catalogue_migrates_saved_recipes_to_stable_ids(self):
+        first = self.store.save_imported_recipe({"name": "Stable chicken", "ingredients": ["chicken"], "steps": ["Cook"]}, {"url": "https://example.test/chicken"})
+        catalogue = self.store.get_meal_catalogue()
+        self.assertEqual([meal["recipe_id"] for meal in catalogue], [first["id"]])
+        self.assertTrue(catalogue[0]["id"].startswith("meal-"))
+        self.assertEqual(self.store.get_meal_catalogue()[0]["id"], catalogue[0]["id"])
+
     def test_recipe_books_allow_many_to_many_membership_and_uncategorised_meals(self):
         first = self.store.save_imported_recipe({"name": "Lemon chicken", "ingredients": ["chicken"], "steps": ["Cook"]}, {"url": "https://example.test/lemon"})
         second = self.store.save_imported_recipe({"name": "Salmon tray bake", "ingredients": ["salmon"], "steps": ["Bake"]}, {"url": "https://example.test/salmon"})
@@ -47,7 +54,8 @@ class StoreTests(unittest.TestCase):
         favourites = self.store.create_recipe_book("Favourites")
         self.store.add_meals_to_recipe_book(quick["id"], [first["id"]])
         self.store.add_meals_to_recipe_book(favourites["id"], [first["id"]])
-        self.assertEqual([meal["id"] for meal in self.store.get_uncategorised_meals()], [second["id"]])
+        second_meal_id = next(row["id"] for row in self.store.get_meal_catalogue() if row["recipe_id"] == second["id"])
+        self.assertEqual([meal["id"] for meal in self.store.get_uncategorised_meals()], [second_meal_id])
         self.assertEqual(self.store.get_recipe_book(quick["id"])["meal_count"], 1)
         self.store.delete_recipe_book(quick["id"])
         self.assertIsNotNone(self.store.get_imported_recipe(first["id"]))
