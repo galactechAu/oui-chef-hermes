@@ -39,6 +39,21 @@ class ShoppingUiTests(unittest.TestCase):
         self.assertNotIn('id="mealsPager"', html)
         self.assertNotIn('id="importPager"', html)
 
+    def test_uncategorised_inbox_supports_bulk_recipe_book_assignment(self):
+        html = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+        for marker in ('uncategorised-pick', 'Add selected to Recipe Books', 'addMealsToBooks', 'aria-live="polite"'):
+            self.assertIn(marker, html)
+
+    def test_meal_action_sheet_has_focus_and_book_assignment_contract(self):
+        html = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+        for marker in ('id="mealSheet"', 'aria-modal="true"', 'mealSheetTrigger', 'Add to Recipe Books', 'document.activeElement', 'focus()'):
+            self.assertIn(marker, html)
+
+    def test_recipe_books_ui_has_accessible_detail_selection_and_existing_list_export(self):
+        html = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+        for marker in ('id="books"', 'id="booksLibrary"', 'id="bookSelectAll"', 'class="checkbox book-pick"', 'Add selected to shopping list', 'Use existing shopping list'):
+            self.assertIn(marker, html)
+
     def test_bottom_navigation_uses_cart_for_lists(self):
         html = (Path(__file__).parents[1] / "static" / "index.html").read_text()
         self.assertIn('data-tab="list"><span class="nav-icon" aria-hidden="true"><i data-lucide="shopping-cart"></i></span>', html)

@@ -41,11 +41,22 @@ Mushrooms are always screened as a household allergy, and you can add other diet
 
 ## Development
 
+Use Python 3.13 and Node.js 22 for the validation suite. Node is used only to check JavaScript syntax; the application server remains dependency-light Python.
+
 ```bash
 python3 -m unittest discover -s tests -q
-python3 -m py_compile app.py core.py store.py generation.py recipe_importer.py recipe_page.py realtime.py
-docker compose config
+python3 -m py_compile app.py core.py store.py generation.py recipe_importer.py recipe_page.py realtime.py allergies.py
+python3 scripts/check_javascript.py
+python3 scripts/public_safety_scan.py
+# Before a commit, also scan the exact staged content:
+python3 scripts/public_safety_scan.py --staged
+git diff --check
+docker compose config --quiet
 ```
+
+Syntax and unit checks do not replace interactive desktop/mobile, keyboard, and multi-client acceptance testing. To run the opt-in browser suite, install `playwright==1.62.0` in a development virtual environment, run `python -m playwright install chromium`, and set `OUI_BROWSER_EXECUTABLE` to that browser's executable path. Then run the normal test discovery with the environment variable set; the browser tests use disposable synthetic stores. CI runs these browser checks separately.
+
+The public-safety scanner detects known high-confidence patterns; review all proposed files and reachable history before publication.
 
 See [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/architecture.md](docs/architecture.md).
 

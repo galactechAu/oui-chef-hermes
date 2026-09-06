@@ -1,5 +1,15 @@
-data/
-tests/
-__pycache__/
-*.pyc
-*.log
+# Allow only portable application build inputs. Runtime state and repository
+# metadata must never enter a local or remote build context.
+**
+!Dockerfile
+!.dockerignore
+!app.py
+!allergies.py
+!core.py
+!store.py
+!generation.py
+!recipe_page.py
+!recipe_importer.py
+!realtime.py
+!static/
+!static/**

@@ -13,7 +13,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 from queue import Empty
 
-from core import scaled_purchase_quantity
+from core import scaled_purchase_quantity, presentation
 from allergies import allergy_error, detect_allergens
 from generation import extract_json, generation_prompt, validate_generation, verify_source_evidence
 from recipe_importer import classify_source, decode_image_data, fetch_public_source_text, recipe_import_prompt, validate_public_url, validate_public_redirects
@@ -32,17 +32,6 @@ BRIDGE_URL = os.environ.get("HERMES_BRIDGE_URL", "").strip() or None
 def health_payload() -> dict:
     return {"status": "ok", "service": "oui-chef", "hermes_bridge_configured": bool(BRIDGE_URL)}
 
-
-def presentation(shopping_list: dict) -> dict:
-    result = dict(shopping_list)
-    result["items"] = []
-    for item in shopping_list.get("items", []):
-        row = dict(item)
-        amount, unit = scaled_purchase_quantity(item, shopping_list["servings"], shopping_list["base_servings"])
-        row["display_quantity"] = amount
-        row["display_unit"] = unit
-        result["items"].append(row)
-    return result
 
 
 def paginate_search(rows: list[dict], query: str = "", page: int = 1, page_size: int = 12) -> dict:
@@ -247,8 +236,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def body(self) -> dict:
         try:
-            length = int(self.headers.get("Content-Length", 0)); return json.loads(self.rfile.read(length)) if length else {}
-        except (json.JSONDecodeError, ValueError): return {}
+            length = int(self.headers.get("Content-Length", 0))
+            if not 0 <= length <= 16 * 1024 * 1024: raise ValueError('request body is too large')
+            body = json.loads(self.rfile.read(length)) if length else {}
+        except (UnicodeDecodeError, ValueError) as error:
+            raise ValueError('a valid JSON object is required') from error
+        if not isinstance(body, dict): raise ValueError('a JSON object is required')
+        return body
 
     def send_events(self):
         subscriber = HUB.subscribe()
@@ -273,10 +267,24 @@ class Handler(BaseHTTPRequestHandler):
         if path in pages:
             raw = (ROOT / "static" / pages[path]).read_bytes(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(raw))); self.end_headers(); return self.wfile.write(raw)
         if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.get_dietary_allergies()})
-        if path == "/api/recipe-books":
+        if path in {"/api/recipe-books", "/api/recipe-books/uncategorised", "/api/recipe-books/recent"}:
             from urllib.parse import parse_qs
-            query = parse_qs(urlparse(self.path).query).get("q", [""])[0]; return self.send_json(200, {"books": STORE.get_recipe_books(query)})
-        if path == "/api/recipe-books/uncategorised": return self.send_json(200, {"meals": STORE.get_uncategorised_meals()})
+            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            try:
+                if path.endswith('/recent'):
+                    limit = int(query.get('limit', ['5'])[0])
+                    if not 1 <= limit <= 100: raise ValueError('limit must be from 1 to 100')
+                    return self.send_json(200, {'books': STORE.get_recent_recipe_books(limit)})
+                page = int(query.get('page', ['1'])[0])
+                size = int(query.get('page_size', ['12'])[0])
+                if page < 1 or not 1 <= size <= 100: raise ValueError('page must be positive and page_size from 1 to 100')
+                search = query.get('q', [''])[0]
+                uncategorised = path.endswith('/uncategorised')
+                rows = STORE.get_uncategorised_meals() if uncategorised else STORE.get_recipe_books(search)
+                result = paginate_search(rows, search if uncategorised else '', page, size)
+                return self.send_json(200, {**result, 'meals' if uncategorised else 'books': result['items']})
+            except ValueError as error:
+                return self.send_json(400, {'error': str(error)})
         if path.startswith("/api/recipe-books/"):
             book = STORE.get_recipe_book(path.rsplit("/", 1)[-1]); return self.send_json(200, book) if book else self.send_json(404, {"error": "recipe book not found"})
         if path == "/api/events": return self.send_events()
@@ -309,8 +317,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/meals":
             from urllib.parse import parse_qs
             query = parse_qs(urlparse(self.path).query); search = query.get("q", query.get("search", [""]))[0]; page = query.get("page", [1])[0]; page_size = query.get("page_size", query.get("limit", [12]))[0]
-            imported = [{"id": row["id"], "kind": "imported", "name": row["recipe"]["name"], "description": row["recipe"].get("summary", ""), "complexity": row["recipe"].get("complexity", "Easy"), "image_url": row["recipe"].get("image_url", ""), "url": f"/api/import-recipes/{row['id']}", "source": row.get("source", {}), "rating": STORE._load()["meal_ratings"].get(row["recipe"]["name"])} for row in STORE.get_imported_recipes()]
-            result = paginate_search(imported + STORE.history(), search, page, page_size); return self.send_json(200, {"meals": result["items"], **result, "limit": result["page_size"]})
+            catalogue = STORE.get_meal_catalogue()
+            meals = [{**row, 'id': row.get('recipe_id', row['id']), 'complexity': row['recipe'].get('complexity', 'Easy')} for row in catalogue]
+            try:
+                result = paginate_search(meals, search, page, page_size)
+                return self.send_json(200, {"meals": result["items"], **result, "limit": result["page_size"]})
+            except ValueError as error:
+                return self.send_json(400, {'error': str(error)})
         if path == "/api/history": return self.send_json(200, {"meals": STORE.history()})
         if path.startswith("/api/lists/") and "/recipes/" in path:
             parts = path.split("/")
@@ -348,12 +361,27 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
-        path, body = urlparse(self.path).path, self.body()
+        path = urlparse(self.path).path
         try:
+            body = self.body()
+            if path.startswith('/api/recipe-books'):
+                for field in ('title', 'name', 'list_id'):
+                    if field in body and not isinstance(body[field], str): raise ValueError(f'{field} must be a string')
+            if path == '/api/recipe-books/memberships':
+                return self.send_json(200, {'books': STORE.add_meals_to_recipe_books(body.get('book_ids'), body.get('meal_ids'))})
+            if path.startswith('/api/recipe-books/') and path.endswith('/pin'):
+                return self.send_json(200, STORE.pin_recipe_book(path.split('/')[3], body.get('pinned')))
+            if path.startswith('/api/recipe-books/') and path.endswith('/use'):
+                return self.send_json(200, STORE.use_recipe_book(path.split('/')[3]))
             if path == "/api/settings/dietary-allergies": return self.send_json(200, {"allergies": STORE.set_dietary_allergies(body.get("allergies", []))})
             if path == "/api/recipe-books": return self.send_json(201, STORE.create_recipe_book(str(body.get("title", ""))))
             if path.startswith("/api/recipe-books/") and path.endswith("/create-list"):
-                return self.send_json(201, presentation(STORE.create_list_from_recipe_book(path.split("/")[3], body.get("meal_ids", []), str(body.get("name", "")))))
+                if 'all' in body and not isinstance(body['all'], bool): raise ValueError('all must be a boolean')
+                if 'meal_ids' in body: STORE._ids(body['meal_ids'])
+                if 'servings' in body and (type(body['servings']) is not int or not 1 <= body['servings'] <= 10):
+                    raise ValueError('servings must be a whole number from 1 to 10')
+                selected = None if body.get('all') else body.get('meal_ids')
+                return self.send_json(201, presentation(STORE.create_list_from_recipe_book(path.split('/')[3], selected, body.get('name', ''), body.get('list_id', ''), body.get('servings'))))
             if path.startswith("/api/recipe-books/") and path.endswith("/meals"):
                 return self.send_json(200, STORE.add_meals_to_recipe_book(path.split("/")[3], body.get("meal_ids", [])))
             if path.startswith("/api/recipe-books/") and path.endswith("/rename"):
@@ -392,6 +420,10 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/generation-jobs/") and path.endswith("/save-meals"):
                 return self.send_json(201, {"recipes": STORE.save_generation_job_meals(path.split("/")[3], body.get("selected", []))})
             if path == "/api/meals/create-list":
+                if 'meal_ids' in body:
+                    for field in ('name', 'list_id'):
+                        if field in body and not isinstance(body[field], str): raise ValueError(f'{field} must be a string')
+                    return self.send_json(201, presentation(STORE.create_list_from_meals(body['meal_ids'], body.get('name', ''), body.get('list_id', ''), body.get('servings'))))
                 return self.send_json(201, presentation(STORE.create_list_from_imported_recipes(body.get("recipe_ids", []), str(body.get("name", "")))))
             if path.startswith("/api/generation-jobs/") and path.endswith("/stop"):
                 return self.send_json(200, STORE.cancel_generation_job(path.split("/")[3]))
