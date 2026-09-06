@@ -163,8 +163,9 @@ class ShoppingStore:
             if not needle or needle in row['title'].casefold() or matches: books.append(row)
         return sorted(books, key=lambda b: (bool(b['pinned']), b['updated_at'], b['id']), reverse=True)
 
-    def get_recent_recipe_books(self, limit: int = 5) -> list[dict]:
-        return sorted((b for b in self.get_recipe_books() if b['last_used_at']), key=lambda b: (b['last_used_at'], b['id']), reverse=True)[:max(1, min(5, int(limit)))]
+    def get_recent_recipe_books(self, limit: int = 10) -> list[dict]:
+        books = self.get_recipe_books()
+        return sorted(books, key=lambda b: (b['last_used_at'] or b['updated_at'], b['id']), reverse=True)[:max(1, min(100, int(limit)))]
 
     @staticmethod
     def _touch_book(book):
