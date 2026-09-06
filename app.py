@@ -273,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if path.endswith('/recent'):
                     limit = int(query.get('limit', ['5'])[0])
-                    if not 1 <= limit <= 5: raise ValueError('limit must be from 1 to 5')
+                    if not 1 <= limit <= 100: raise ValueError('limit must be from 1 to 100')
                     return self.send_json(200, {'books': STORE.get_recent_recipe_books(limit)})
                 page = int(query.get('page', ['1'])[0])
                 size = int(query.get('page_size', ['12'])[0])
